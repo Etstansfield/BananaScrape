@@ -1,21 +1,19 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
-using OpenQA.Selenium.Support.UI;
+using OpenQA.Selenium.Remote;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 
 namespace BananaScrape
 {
     public class Program
     {
-        private static ChromeDriver _driver = null;
+        private static RemoteWebDriver _driver = null;
         private static List<MapInfo> _mapInfo = new List<MapInfo>();
         private static int _downloadPause;
         private static int _loadContentPause;
@@ -27,20 +25,15 @@ namespace BananaScrape
         }
 
         [Description("Scrapes a single Gamebanana page and saves metadata about the maps to a json file. Optionally can download the maps as well.")]
-        public static int Scrape(string url, bool download = false, int downloadPause = 1000, int loadContentPause = 200, int loadMoreLimit = int.MaxValue)
+        public static int Scrape(string url, bool download = false, int downloadPause = 1000, int loadContentPause = 200, string browser = "chrome", int loadMoreLimit = int.MaxValue)
         {
-            Console.WriteLine($"Starting scrape for mapinfo file: {url} with download = {download} and downloadPause: {downloadPause}");
+            Console.WriteLine($"+++ Browser: ${browser} +++");
+            Console.WriteLine($"Starting scrape for page url: {url} with download = {download} and downloadPause: {downloadPause}");
 
             _downloadPause = downloadPause; _loadContentPause = loadContentPause; _loadMoreLimit = loadMoreLimit;
 
-            //var url = "https://gamebanana.com/maps/cats/43"; //A good test page. It only had 47 maps on it...
+            CreateDriver(browser);
 
-            //This option causes the browser to not load images. To reduce load on server.
-            var options = new ChromeOptions();
-            options.AddUserProfilePreference("profile.default_content_setting_values.images", 2);
-
-            _driver = new ChromeDriver(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), options);
-            
             ScrapePage(url);
 
             var filename = $"scrape_data_{DateTime.Now.ToString("yyyy-MM-dd hh_mm_ss")}.json";
@@ -59,7 +52,7 @@ namespace BananaScrape
         }
 
         [Description("Downloads all of the files specified in a scrape json file.")]
-        public static int Download(string filename, int downloadPause = 1000)
+        public static int Download(string filename, int downloadPause = 1000, string browser = "chrome")
         {
             Console.WriteLine($"Starting download for mapinfo file: {filename} with downloadPause: {downloadPause}");
             _downloadPause = downloadPause;
@@ -67,8 +60,8 @@ namespace BananaScrape
             var fileData = JsonConvert.DeserializeObject<JObject>(File.ReadAllText(filename));
             var mapInfo = fileData["MapInfo"].ToObject<Dictionary<string, object>[]>();
 
-            _driver = new ChromeDriver(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location));
-            
+            CreateDriver(browser);
+
             DownloadMaps(mapInfo.Select(x => x["Link"]).Cast<string>());
 
             _driver.Dispose();
@@ -76,9 +69,9 @@ namespace BananaScrape
         }
 
         [Description("Attempts to scrape some info from google just to see if selenium is working properly.")]
-        public static int TestScrape()
+        public static int TestScrape(string browser = "chrome")
         {
-            _driver = new ChromeDriver(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location));
+            CreateDriver(browser);
             
             _driver.Navigate().GoToUrl("https://www.google.com");
             IWebElement body = _driver.FindElementByTagName("body");
@@ -87,6 +80,24 @@ namespace BananaScrape
 
             _driver.Dispose();
             return 0;
+        }
+
+        private static void CreateDriver(string browser)
+        {
+            if (browser.Equals("chrome", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("+++ Loading Chrome +++");
+                _driver = Drivers.CreateChromeDriver();
+            }
+            else if (browser.Equals("firefox", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("+++ Loading Firefox +++");
+                _driver = Drivers.CreateFirefoxDriver();
+            }
+            else
+            {
+                throw new ArgumentException($"Unknown browser: {browser}. Available browsers: [chrome, firefox]");
+            }
         }
 
         private static void DownloadMaps(IEnumerable<string> links)
